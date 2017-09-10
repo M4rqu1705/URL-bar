@@ -1,0 +1,7 @@
+from googletrans import Translator
+import urllib
+from urllib.request import Request, urlopen
+import string
+import re
+import pyrae
+from PyDictionary import PyDictionary
