@@ -34,7 +34,7 @@ def define(word):
             # Remove HTML tags in definition
             definition = re.sub("<[^>]*>", "", definition)
             # Remove newlines in definition
-            definition = re.sub("\n
+            definition = re.sub("\n", "", definition) 
             # Remove beginning colons and whitespace following it
             definition = re.sub("^:[\s]*", "", definition)
             # Remove any strange characters
@@ -57,29 +57,45 @@ def define(word):
 
 def definir(palabra):
     try:
-        print(palabra)
         # Preparar el URI de el pedido con la direccion https y headers apropiados
-        direccion = "http://www.wordreference.com/definicion/hola" + str(palabra)
+        direccion = "http://www.wordreference.com/definicion/" + str(palabra)
         headers = {'User-Agent': "Mozilla/5.0 (Windows NT 6.1) AppleWebKit/537.2 (KHTML, like Gecko) Chrome/22.0.1216.0 Safari/537.2"}
         url = Request(direccion, headers = headers)
 
         # Recuperar y extraer partes relevantes de la página
         pagina_web = urlopen(url).read().decode("utf-8","ignore") 
-        print(pagina_web) 
-        pagina_web = re.findall("<div id=\"article\">[\S\s]*?<\/div>", pagina_web)
+        pagina_web = re.findall(r"<ol class='entry'[\S\s]*?</ol>", pagina_web)
 
-        # Encontar cada instancia de un sinónimo en la página web
-        lista_sinonimos = re.findall("(?!(<li><span[\S\s]*?<\/li>))(<li>[\S\s]*?<\/li>)", pagina_web[0])
 
-        # Demostrar los resultados de forma atractiva
-        c = 1
-        for sinonimo in lista_sinonimos:
-            sinonimo = re.sub("Antónimos.*?<|<.*?>", "", sinonimo[1]).capitalize()
-            print("{}) {}".format(c, sinonimo))
+        lista_definiciones = []
+        for entrada in pagina_web:
+            lista_definiciones += re.findall(r"<li>[\S\s]*?<span class=i", entrada)
+
+        if len(lista_definiciones) < 1:
+            raise Exception("No definitions found")
+
+        c=1
+        for definicion in lista_definiciones:
+            definicion = re.sub("(?:<li>|<span class=i|<br>|</?span[\S\s]*?>)", "", definicion)
+            definicion = re.sub("[:\"']", "", definicion)
+            definicion = definicion.strip().capitalize()
+
+            # Hacer mayuscula cada letra que le sigue a un punto
+            temp = re.compile("\. \S")
+            temp = temp.finditer(definicion)
+            for match in temp:
+                word = match.group()
+                start_index, end_index = match.span()
+                definicion = definicion[:start_index] + word.upper() + definicion[end_index:]
+
+            if len(definicion) < 2:
+                continue
+
+            print("{}) {}".format(c, definicion))
             c += 1
 
     except:
-        print("Error. Check spelling and try again!!")
+        print("Error. ¡¡Revise su gramática e intente nuevamente!!")
 
     #  try:
         #  definiciones = str(rae.exact(palabra)).replace("'","").replace("[","").replace("]","").replace("\"","").split("\\n")
@@ -154,7 +170,7 @@ def synonym(word):
         print("Error. Check spelling and try again!!")
 
 
-last_action = "quit"
+last_action = "definir"
 actions = {"translate":r"^(?:translate|traducir) *", "define":r"^(?:define|dict|dictionary) *",
             "definir":r"^(?:definir|dicc|diccionario) *", "tesauro":r"^(?:tesauro|sinonimo|sin|antonimo|anto) *", 
             "thesaurus":r"^(?:thesaurus|synonym|syn|anthonym|antho) *", "clear":r"^(?:clear|cls)",
