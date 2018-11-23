@@ -27,7 +27,40 @@ def define(word):
         web_page = urlopen(url).read().decode("utf-8","ignore")
 
         #  definitions = re.findall(r"(?=<div class=\"(?:\.*has-num.*|.*vg.*)>[\S\s]*?<\/div>)[\S\s]*?<strong class=\"mw_t_bc\">: <\/strong>([\S\s]*?)(?=<.*)", web_page) 
-        definitions = re.findall(r"<span class=\"dtText\">([\S\s]*?)<\/span>", web_page) 
+
+        
+
+        # I want to be able to extract every definition, its examples, and the corresponding category (noun, adjective, pronoun, etc.)
+
+        definitions = re.findall(r"<div id=\"dictionary-entry-\d{0,2}[\S\s]*?<!-- END <div id=\"entry-\d\"> -->", web_page)
+        temp = []
+        for definition in definitions:
+            temp.append(re.findall(r"<span class=\"dtText\">([\S\s]*?)<\/span>", definition))
+        definitions = temp[:]
+        for definition in definitions 
+
+        # I want to be able to extract a list of lists of categorized definitions
+
+        headers = re.findall(r"<span class=\"fl\"[\S\s]*?<\/div>", web_page)
+        temp = []
+        for header in headers:
+            #  Remove HTML tags in header
+            header = re.sub("<[^>]*?>", "", header)
+            #  Remove newlines in header
+            header = re.sub("\n", "", header) 
+
+            temp.append(header)
+        headers = temp[:]
+
+        # I want to be able to extract a list of headers, which are the categories
+
+
+        # Resulting list of tuples: [(header, [(definition, example), (definition,example)]), [(header, [(definition, example), (definition,example)]), [(header, [(definition, example), (definition,example)])]
+
+
+        
+        #  examples = re.findall(r"<span class=\"ex-sent[\S\s]*?(?:</span>[\S\s]*?){2}", web_page)
+
         c = 0
         for definition in definitions:
             
@@ -69,15 +102,16 @@ def definir(palabra):
 
         lista_definiciones = []
         for entrada in pagina_web:
-            lista_definiciones += re.findall(r"<li>[\S\s]*?<span class=i", entrada)
+            lista_definiciones += re.findall(r"<li>([\S\s]*?)(?=.{0,5})(?:<li>|<span class=i)", entrada)
 
         if len(lista_definiciones) < 1:
             raise Exception("No definitions found")
 
         c=1
         for definicion in lista_definiciones:
-            definicion = re.sub("(?:<li>|<span class=i|<br>|</?span[\S\s]*?>)", "", definicion)
+            definicion = re.sub("(?:<?/?li>|<br>|</?span[\S\s]*?>|<|>)", "", definicion)
             definicion = re.sub("[:\"']", "", definicion)
+            definicion = re.sub(" {2,}", " ", definicion)
             definicion = definicion.strip().capitalize()
 
             # Hacer mayuscula cada letra que le sigue a un punto
@@ -170,7 +204,7 @@ def synonym(word):
         print("Error. Check spelling and try again!!")
 
 
-last_action = "definir"
+last_action = "define"
 actions = {"translate":r"^(?:translate|traducir) *", "define":r"^(?:define|dict|dictionary) *",
             "definir":r"^(?:definir|dicc|diccionario) *", "tesauro":r"^(?:tesauro|sinonimo|sin|antonimo|anto) *", 
             "thesaurus":r"^(?:thesaurus|synonym|syn|anthonym|antho) *", "clear":r"^(?:clear|cls)",
