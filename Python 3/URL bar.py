@@ -1,43 +1,77 @@
-from googletrans import Translator
-import urllib
+#  from PyDictionary import PyDictionary
+#  from googletrans import Translator
 from urllib.request import Request, urlopen
-import string
-import re
+import os
 import pyrae
-from PyDictionary import PyDictionary
-import sys, os
+import re
+import thesaurus
 
-translator = Translator()
+
+#  translator = Translator()
 rae = pyrae.DLE()
-dictionary = PyDictionary()
+#  dictionary = PyDictionary()
 
-def translate(text, source, destination):
-    try:
-        translation = str(translator.translate(text, src=source, dest=destination))
-        translation = translation.replace(translation[:translation.find("text=")+5], "").replace(translation[translation.find(", pronunciation="):], "")
-    except:
-        print("Error. Try again!!")
+#  def translate(text, source, destination):
+    #  try:
+        #  translation = str(translator.translate(text, src=source, dest=destination))
+        #  translation = translation.replace(translation[:translation.find("text=")+5], "").replace(translation[translation.find(", pronunciation="):], "")
+    #  except:
+        #  print("Error. Try again!!")
 
 def define(word):
+    # <div id=\"definition-wrapper.*>([\S\s]*)</div>
+    # <(.|\n)*?>
+
 
     try:
         address = "https://www.merriam-webster.com/dictionary/" + word
         headers = {'User-Agent': "Mozilla/5.0 (Windows NT 6.1) AppleWebKit/537.2 (KHTML, like Gecko) Chrome/22.0.1216.0 Safari/537.2"}
         url = Request(address, headers = headers)
+
         web_page = urlopen(url).read().decode("utf-8","ignore")
 
-        #  definitions = re.findall(r"(?=<div class=\"(?:\.*has-num.*|.*vg.*)>[\S\s]*?<\/div>)[\S\s]*?<strong class=\"mw_t_bc\">: <\/strong>([\S\s]*?)(?=<.*)", web_page) 
+        definition_wrapper = re.search(r"<div id=\"definition-wrapper.*>([\S\s]*)</div>", web_page).group(1)
 
-        
+        text_only = re.sub(r"<(.|\n)*?>", '', definition_wrapper, flags=re.M)
+
+        words = re.findall(r"(\w+)\s*", text_only)
+
+        c, d = 0, 0
+        begin_collect = False
+        definitions = [[]]
+
+        for word in words:
+            c+=1
+            if c > 2 and words[c-4] == "Definition" and words[c-3] == "of":
+                begin_collect = True
+
+            if re.search(r"^\d+", word):
+                definitions.append([])
+                word += ") "
+                d+=1
+
+            if begin_collect:
+                print("{}) {}".format(c, str(word)))
+                definitions[d].append(str(word))
+
+
+        for definition in definitions:
+            definition = ' '.join(definition)
+            definition = re.sub("\n", "", definition)
+            print(definition)
+
+
+        return
+
+    #  definitions = re.findall(r"(?=<div class=\"(?:\.*has-num.*|.*vg.*)>[\S\s]*?<\/div>)[\S\s]*?<strong class=\"mw_t_bc\">: <\/strong>([\S\s]*?)(?=<.*)", web_page) 
 
         # I want to be able to extract every definition, its examples, and the corresponding category (noun, adjective, pronoun, etc.)
 
-        definitions = re.findall(r"<div id=\"dictionary-entry-\d{0,2}[\S\s]*?<!-- END <div id=\"entry-\d\"> -->", web_page)
+        definitions = me.findall(r"<div id=\"dictionarymentry-\d{0,2}[\S\s]*?<!-- END <div id=\"entry-\d\"> -->", web_page)
         temp = []
         for definition in definitions:
             temp.append(re.findall(r"<span class=\"dtText\">([\S\s]*?)<\/span>", definition))
         definitions = temp[:]
-        for definition in definitions 
 
         # I want to be able to extract a list of lists of categorized definitions
 
@@ -58,12 +92,12 @@ def define(word):
         # Resulting list of tuples: [(header, [(definition, example), (definition,example)]), [(header, [(definition, example), (definition,example)]), [(header, [(definition, example), (definition,example)])]
 
 
-        
+
         #  examples = re.findall(r"<span class=\"ex-sent[\S\s]*?(?:</span>[\S\s]*?){2}", web_page)
 
         c = 0
         for definition in definitions:
-            
+
             # Remove HTML tags in definition
             definition = re.sub("<[^>]*>", "", definition)
             # Remove newlines in definition
@@ -180,90 +214,171 @@ def sinonimo(palabra):
         print("Error. Check spelling and try again!!")
 
 def synonym(word):
+
+    # Structure of Word.data:
+    # Group: int
+    # What is wanted of it ('partOfSpeech, 'meaning', 'syn', 'ant', etc.)
+    # Which one ('word', 'relevance', 'length', 'complexity', 'form')
+
     try:
-        # Prepare the request url with the appropriate http direction and headers
-        direction = "https://www.thesaurus.com/browse/" + str(word) + "?s=t"
-        headers = {'User-Agent': "Mozilla/5.0 (Windows NT 6.1) AppleWebKit/537.2 (KHTML, like Gecko) Chrome/22.0.1216.0 Safari/537.2"}
-        url = Request(direction, headers = headers)
+        # Get word
+        word = thesaurus.Word(word)
+        groups = word.data
 
-        # Retrieve and decode website with relevant parts only
-        web_page = urlopen(url).read().decode("utf-8","ignore")
-        web_page = re.findall("<section class=\"synonyms-container.*?</section>", web_page)
+        for group in groups:
 
-        # Find every instance of a synonym in the retrieved website
-        synonyms_list = re.findall("<li>.*?</li>", web_page[0])
+            # Print title of group and part of sentence
+            print("{} ({})".format(
+                group['meaning'].upper().strip(), 
+                group['partOfSpeech'].lower().strip()
+                )
+                )
 
-        # Print out the results in an appealing way
-        c = 1
-        for synonym in synonyms_list:
-            synonym = re.sub(".css.*}|<li>.*<span.*?>|<.*?>", "", synonym).capitalize()
-            print("{}) {}".format(c, synonym))
-            c += 1
+            current_line = []
 
-    except:
-        print("Error. Check spelling and try again!!")
+            entries = group['syn']
+            for entry in entries:
+                line = ", ".join(current_line)
+
+                # Constrain synonyms to display to screen width
+                if len(line)+len(entry[0])+3 > screen_size[0] and entry != entries[-1]:
+                    print(line)
+                    current_line = [entry[0]]
+                elif entry == entries[-1]:
+                    current_line.append(entry[0].lower().strip())
+                    print(line)
+                else:
+                    current_line.append(entry[0].lower().strip())
+            print()
+
+    except thesaurus.exceptions.MisspellingError as e:
+        print(e)
+
+def antonym(word):
+
+    # Structure of Word.data:
+    # Group: int
+    # What is wanted of it ('partOfSpeech, 'meaning', 'syn', 'ant', etc.)
+    # Which one ('word', 'relevance', 'length', 'complexity', 'form')
+
+    try:
+        # Get word
+        word = thesaurus.Word(word)
+        groups = word.data
+
+        for group in groups:
+
+            try:
+                if len(group['ant']) < 1: 
+                    continue
+            except:
+                continue
+
+            # Print title of group and part of sentence
+            print("{} ({})".format(
+                group['meaning'].upper().strip(), 
+                group['partOfSpeech'].lower().strip()
+                )
+                )
+
+            current_line = []
+
+            entries = group['ant']
+            for entry in entries:
+                line = ", ".join(current_line)
+
+                # Constrain synonyms to display to screen width
+                if len(line)+len(entry[0])+3 > screen_size[0] and entry != entries[-1]:
+                    print(line)
+                    current_line = [entry[0]]
+                elif entry == entries[-1]:
+                    current_line.append(entry[0].lower().strip())
+                    print(line)
+                else:
+                    current_line.append(entry[0].lower().strip())
+            print()
+
+    except thesaurus.exceptions.MisspellingError as e:
+        print(e)
 
 
 last_action = "define"
-actions = {"translate":r"^(?:translate|traducir) *", "define":r"^(?:define|dict|dictionary) *",
-            "definir":r"^(?:definir|dicc|diccionario) *", "tesauro":r"^(?:tesauro|sinonimo|sin|antonimo|anto) *", 
-            "thesaurus":r"^(?:thesaurus|synonym|syn|anthonym|antho) *", "clear":r"^(?:clear|cls)",
-            "exit":r"^(?:quit|exit)"}
+actions = {
+        "translate":r"^(?:translate|traducir)",
+        "define":r"^(?:define|dict|dictionary)",
+        "definir":r"^(?:definir|dicc|diccionario)",
+        "tesauro":r"^(?:tesauro|sinonimo|sin|antonimo|anto)", 
+        "synonym":r"^(?:synonym|syn)",
+        "antonym":r"^(?:antonym|anton|ant)",
+        "clear":r"^(?:clear|cls)",
+        "exit":r"^(?:quit|exit)"
+        }
 screen_size = [0,0]
 
 
 #scroll or table to display results
 #color?
+
 if __name__=="__main__":
 
-    
-    
-    #  os.system('cls')
     while(True):
 
+        # Get screen size
         try:
             screen_size[0], screen_size[1] = os.get_terminal_size(0)
         except OSError:
             screen_size[0], screen_size[1] = os.get_terminal_size(1)
 
+        # Receive user command
+        _input = input("[<<] ").lower().strip()
 
-        task = input("[<<] ").lower().strip()
-        if re.search(actions["translate"], task) or (last_action == "translate" and not True in [bool(re.search(value, task)) for key, value in actions.items() if key != "translate"]):
+        # Retrieve the task from the user command
+        task = re.match(r"^(\w+).*$", _input).group(1)
+
+        # If no acceptable task found 
+        check_for_task = [bool(re.search(value, task)) for key, value in actions.items()]
+        if(not True in check_for_task):
+            # ... try to repeat last task
+            task = last_action
+
+        # Retrieve the word from the user command
+        word = re.search(r"\w+\s*([\S\s]*)$", _input).group(1).lower().strip()
+
+        # Check which action to perform
+        if re.search(actions["translate"], task):
             last_action = "translate"
-            task = re.sub(r"^(?:translate|traducir)", "", task, flags=re.M)
-            translate(task.strip())
+            #  translate(word)
             print("_"*screen_size[0] + "\n")
 
-        elif re.search(actions["define"], task) or (last_action == "define" and not True in [bool(re.search(value, task)) for key, value in actions.items() if key != "define"]):
+        elif re.search(actions["define"], task):
             last_action = "define"
-            task = re.sub(r"^(?:define|dict|dictionary)", "", task, flags=re.M)
-            define(task.strip())
+            define(word)
             print("_"*screen_size[0] + "\n")
 
-        elif re.search(actions["definir"], task) or (last_action == "definir" and not True in [bool(re.search(value, task)) for key, value in actions.items() if key != "definir"]):
+        elif re.search(actions["definir"], task):
             last_action = "definir"
-            task = re.sub(r"^(?:definir|dicc|diccionario)", "", task, flags=re.M)
-            definir(task.strip())
+            definir(word)
             print("_"*screen_size[0] + "\n")
 
-        elif re.search(actions["tesauro"], task) or (last_action == "tesauro" and not True in [bool(re.search(value, task)) for key, value in actions.items() if key != "tesauro"]):
+        elif re.search(actions["tesauro"], task):
             last_action = "tesauro"
-            task = re.sub(r"^(?:tesauro|sinonimo|sin|antonimo|anto)", "", task, flags=re.M)
-            sinonimo(task.strip())
+            sinonimo(word)
             print("_"*screen_size[0] + "\n")
 
-        elif re.search(actions["thesaurus"], task) or (last_action == "thesaurus" and not True in [bool(re.search(value, task)) for key, value in actions.items() if key != "thesaurus"]):
-            last_action = "thesaurus"
-            task = re.sub(r"^(?:thesaurus|synonym|syn|anthonym|antho) *", "", task, flags=re.M)
-            synonym(task.strip())
+        elif re.search(actions["synonym"], task):
+            last_action = "synonym"
+            synonym(word)
             print("_"*screen_size[0] + "\n")
 
-        elif re.search(actions["clear"], task) or (last_action == "clear" and not True in [bool(re.search(value, task)) for key, value in actions.items() if key != "clear"]):
+        elif re.search(actions["antonym"], task):
+            last_action = "antonym"
+            antonym(word)
+            print("_"*screen_size[0] + "\n")
+
+        elif re.search(actions["clear"], task):
             last_action = "clear"
             os.system('cls')
 
-        elif re.search(actions["exit"], task) or (last_action == "exit" and not True in [bool(re.search(value, task)) for key, value in actions.items() if key != "exit"]):
+        elif re.search(actions["exit"], task):
             print("_"*screen_size[0] + "\n")
             os._exit(0)
-
-

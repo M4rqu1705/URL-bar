@@ -5,3 +5,5 @@ import string
 import re
 import pyrae
 from PyDictionary import PyDictionary
+
+thesaurus
