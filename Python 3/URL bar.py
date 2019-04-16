@@ -1,11 +1,11 @@
 #  from PyDictionary import PyDictionary
 #  from googletrans import Translator
-from urllib.request import Request, urlopen
+from bs4 import BeautifulSoup
+import urllib.request
 import os
 import pyrae
 import re
 import thesaurus
-
 
 #  translator = Translator()
 rae = pyrae.DLE()
@@ -18,109 +18,33 @@ rae = pyrae.DLE()
     #  except:
         #  print("Error. Try again!!")
 
+
 def define(word):
-    # <div id=\"definition-wrapper.*>([\S\s]*)</div>
-    # <(.|\n)*?>
-
-
     try:
+        # Prepare url and retrieve Merriam Webster's html 
         address = "https://www.merriam-webster.com/dictionary/" + word
         headers = {'User-Agent': "Mozilla/5.0 (Windows NT 6.1) AppleWebKit/537.2 (KHTML, like Gecko) Chrome/22.0.1216.0 Safari/537.2"}
-        url = Request(address, headers = headers)
+        url = urllib.request.Request(address, headers = headers)
+        page = urllib.request.urlopen(url)
 
-        web_page = urlopen(url).read().decode("utf-8","ignore")
+        # Extract definitions
+        bsPage = BeautifulSoup(page.read(), 'html.parser')
+        matches = bsPage.findAll("span", {"class": "dtText"})
 
-        definition_wrapper = re.search(r"<div id=\"definition-wrapper.*>([\S\s]*)</div>", web_page).group(1)
+        # Extract useful parts of definitions 
+        definitions = []
+        for match in matches:
+            output = match.get_text().strip()           # Get stripped text 
+            output = re.sub(r'\s{3,}.*', "", output)    # Remove too much white space
+            if output[0]==":":                          # Exclude examples
+                definitions.append(output[2].upper() + output[3:])          
 
-        text_only = re.sub(r"<(.|\n)*?>", '', definition_wrapper, flags=re.M)
+        # Print out definitions
+        for c in range(len(definitions)):
+            print("{}) {}".format(c+1, definitions[c])) # Format: n) Def...
 
-        words = re.findall(r"(\w+)\s*", text_only)
-
-        c, d = 0, 0
-        begin_collect = False
-        definitions = [[]]
-
-        for word in words:
-            c+=1
-            if c > 2 and words[c-4] == "Definition" and words[c-3] == "of":
-                begin_collect = True
-
-            if re.search(r"^\d+", word):
-                definitions.append([])
-                word += ") "
-                d+=1
-
-            if begin_collect:
-                print("{}) {}".format(c, str(word)))
-                definitions[d].append(str(word))
-
-
-        for definition in definitions:
-            definition = ' '.join(definition)
-            definition = re.sub("\n", "", definition)
-            print(definition)
-
-
-        return
-
-    #  definitions = re.findall(r"(?=<div class=\"(?:\.*has-num.*|.*vg.*)>[\S\s]*?<\/div>)[\S\s]*?<strong class=\"mw_t_bc\">: <\/strong>([\S\s]*?)(?=<.*)", web_page) 
-
-        # I want to be able to extract every definition, its examples, and the corresponding category (noun, adjective, pronoun, etc.)
-
-        definitions = me.findall(r"<div id=\"dictionarymentry-\d{0,2}[\S\s]*?<!-- END <div id=\"entry-\d\"> -->", web_page)
-        temp = []
-        for definition in definitions:
-            temp.append(re.findall(r"<span class=\"dtText\">([\S\s]*?)<\/span>", definition))
-        definitions = temp[:]
-
-        # I want to be able to extract a list of lists of categorized definitions
-
-        headers = re.findall(r"<span class=\"fl\"[\S\s]*?<\/div>", web_page)
-        temp = []
-        for header in headers:
-            #  Remove HTML tags in header
-            header = re.sub("<[^>]*?>", "", header)
-            #  Remove newlines in header
-            header = re.sub("\n", "", header) 
-
-            temp.append(header)
-        headers = temp[:]
-
-        # I want to be able to extract a list of headers, which are the categories
-
-
-        # Resulting list of tuples: [(header, [(definition, example), (definition,example)]), [(header, [(definition, example), (definition,example)]), [(header, [(definition, example), (definition,example)])]
-
-
-
-        #  examples = re.findall(r"<span class=\"ex-sent[\S\s]*?(?:</span>[\S\s]*?){2}", web_page)
-
-        c = 0
-        for definition in definitions:
-
-            # Remove HTML tags in definition
-            definition = re.sub("<[^>]*>", "", definition)
-            # Remove newlines in definition
-            definition = re.sub("\n", "", definition) 
-            # Remove beginning colons and whitespace following it
-            definition = re.sub("^:[\s]*", "", definition)
-            # Remove any strange characters
-            definition = re.sub("\s[()]\s", "", definition)
-
-            # Remove any examples
-            definition = re.sub("\n[\S\s]*$", "", definition)
-            # Remove surrounding whitespace
-            definition = definition.strip()
-            # Capitalize first letter of definition
-            definition = definition.capitalize()
-            # Add a trailing period
-            definition += "."
-
-            #  definition = definition.strip().capitalize() + "."
-            c = c+1
-            print ("\n({}) {}".format(str(c), definition))
     except:
-        print("Error. Check spelling and try again!!")
+        print("[×] Error! Check your spelling and try again!!")
 
 def definir(palabra):
     try:
@@ -163,7 +87,7 @@ def definir(palabra):
             c += 1
 
     except:
-        print("Error. ¡¡Revise su gramática e intente nuevamente!!")
+        print("[×] ¡Error! ¡¡Revise su gramática e intente nuevamente!!")
 
     #  try:
         #  definiciones = str(rae.exact(palabra)).replace("'","").replace("[","").replace("]","").replace("\"","").split("\\n")
@@ -344,7 +268,7 @@ if __name__=="__main__":
         # Retrieve the word from the user command
         word = re.search(r"\w+\s*([\S\s]*)$", _input).group(1).lower().strip()
 
-        # Check which action to perform
+        # iCheck which action to perform
         if re.search(actions["translate"], task):
             last_action = "translate"
             #  translate(word)
