@@ -4,37 +4,47 @@ import curses.textpad
 import json
 import re
 import requests
+import pprint
 
 import locale
-locale.setlocale(locale.LC_ALL, '')
+locale.setlocale(locale.LC_ALL, 'en_US.UTF-8')
 code = locale.getpreferredencoding()
 
 
-#     ___ _      _   ___ ___     ___  ___ ___ ___ _  _ ___ _____ ___ ___  _  _ ___ 
+#     ___ _      _   ___ ___     ___  ___ ___ ___ _  _ ___ _____ ___ ___  _  _ ___
 #    / __| |    /_\ / __/ __|   |   \| __| __|_ _| \| |_ _|_   _|_ _/ _ \| \| / __|
 #   | (__| |__ / _ \\__ \__ \   | |) | _|| _| | || .` || |  | |  | | (_) | .` \__ \
 #    \___|____/_/ \_\___/___/   |___/|___|_| |___|_|\_|___| |_| |___\___/|_|\_|___/
-#                                                                                  
+#
 
 # Information is extracted within these classes:
 class Information:
     title = ''
     subtitle = ''
     entries = ''
+    width = 0
 
     def __init__(self):
         self.title = ''
         self.subtitle = ''
         self.entries = []
+        self.width = 0
+
+    def set_width(self, width):
+        self.width = width
+    def get_width(self):
+        return self.width
 
     def set_title(self, title):
         self.title = title.strip().upper()
     def get_title(self):
+        self.title = self.title.center(self.width)
         return self.title
 
     def set_subtitle(self, subtitle):
         self.subtitle = subtitle.strip().upper()
     def get_subtitle(self):
+        self.subtitle = self.subtitle.center(self.width)
         return self.subtitle
 
     def set_entries(self, entries):
@@ -60,7 +70,7 @@ class Body:
 
         self.win = curses.newwin(self.max_y, self.max_x, self.y0, self.x0)
 
-    def set_message(self, message):
+    def set_message(self, info):
         import textwrap
         wrapper = textwrap.TextWrapper(
                 width=self.max_x,
@@ -68,7 +78,13 @@ class Body:
                 replace_whitespace=False,
                 drop_whitespace=False,
                 subsequent_indent=self.wrapped_line_prefix)
-        self.message = wrapper.wrap(message)
+
+        self.message = info.get_title() + '\n' + wrapper.fill(info.get_subtitle()) + '\n\n' + wrapper.fill(info.get_entries())
+        self.message = self.message.split('\n')
+        for i, line in enumerate(self.message):
+            if line == self.wrapped_line_prefix:
+                self.message[i] = ""
+        #  curses.endwin(); breakpoint()
 
     def refresh(self):
         self.win.refresh()
@@ -76,7 +92,7 @@ class Body:
     def clear(self):
         self.win.clear()
 
-    def scroll_body(self, scroll_increment):
+    def scroll(self, scroll_increment):
         # Clear body to remove garbage from previous view
         self.clear()
 
@@ -88,20 +104,27 @@ class Body:
         # Make sure scroll is not above text boundary
         if self.abs_scroll < 0:
             self.abs_scroll = 0
-            
+
         # Restrain amount of lines in message based on abs_scroll and max_y
         message = self.message[self.abs_scroll:self.abs_scroll+self.max_y-1]
 
+        #  curses.endwin(); breakpoint()
+
         # Add lines to screen
         for i,line in enumerate(message):
-            self.win.addstr(i, 0, line)
+            try:
+                self.win.addstr(i, 0, line)
+            except Exception:
+                pass
+                #  curses.endwin(); breakpoint()
+
 
 
 # Text box object for the curses TUI
 # Mainly automates validation and preparation of user input string INCLUDING
 # non-ascii characters and interpreting other uniquely
 class TextBox:
-    def __init__(self, max_x, beg_y, beg_x, body, process_query):
+    def __init__(self, max_x, beg_y, beg_x, process_query):
         win = curses.newwin(1, max_x, beg_y, beg_x)
         self.win = curses.textpad.Textbox(win)
         self.win.stripspaces = False
@@ -111,14 +134,14 @@ class TextBox:
         self.process_query = process_query
 
     def validate(self, char):
+        global body
         # Make sure that accents are taken into account
-        #  curses.endwin(); breakpoint()
         if char == 259:         # Up arrow
-            self.body.scroll_body(-1)
-            self.body.refresh()
+            body.scroll(-1)
+            body.refresh()
         elif char == 258:       # Down arrow
-            self.body.scroll_body(1)
-            self.body.refresh()
+            body.scroll(1)
+            body.refresh()
         elif char == 260:       # Left arrow
             cursor = self.win.win.getyx()[1]
             if cursor-1 < 0:
@@ -221,11 +244,11 @@ class TextBox:
         return self.user_input
 
 
-#    _  _ ___ _    ___ ___ ___     ___ _   _ _  _  ___ _____ ___ ___  _  _ ___ 
+#    _  _ ___ _    ___ ___ ___     ___ _   _ _  _  ___ _____ ___ ___  _  _ ___
 #   | || | __| |  | _ \ __| _ \   | __| | | | \| |/ __|_   _|_ _/ _ \| \| / __|
 #   | __ | _|| |__|  _/ _||   /   | _|| |_| | .` | (__  | |  | | (_) | .` \__ \
 #   |_||_|___|____|_| |___|_|_\   |_|  \___/|_|\_|\___| |_| |___\___/|_|\_|___/
-#                                                                              
+#
 # Clean up strings
 def clean_up(word):
     word = word.strip()                         # Strip whitespace
@@ -262,7 +285,7 @@ def basic_template(screen):
 
     # Max_y is substracted 5 to take into acount other lines above and below. The same with content_width
     body = Body(max_y-5, content_width-3, 3, 2)
-    text_box = TextBox(text_width, 1, 8, body, process_query)
+    text_box = TextBox(text_width, 1, 8, process_query)
 
     # Close the bottom part of the box
     screen.addstr(max_y-2, 1, '└' + '─'*(content_width+1) + '┘')
@@ -270,11 +293,11 @@ def basic_template(screen):
     return screen, text_box, body
 
 
-#    ___ _   _ _  _  ___ _____ ___ ___  _  _     ___  ___ ___ ___ _  _ ___ _____ ___ ___  _  _ ___ 
+#    ___ _   _ _  _  ___ _____ ___ ___  _  _     ___  ___ ___ ___ _  _ ___ _____ ___ ___  _  _ ___
 #   | __| | | | \| |/ __|_   _|_ _/ _ \| \| |   |   \| __| __|_ _| \| |_ _|_   _|_ _/ _ \| \| / __|
 #   | _|| |_| | .` | (__  | |  | | (_) | .` |   | |) | _|| _| | || .` || |  | |  | | (_) | .` \__ \
 #   |_|  \___/|_|\_|\___| |_| |___\___/|_|\_|   |___/|___|_| |___|_|\_|___| |_| |___\___/|_|\_|___/
-#                                                                                                  
+#
 def Merriam_Webster_Definitions(word):
     word = word.strip().lower()
 
@@ -469,7 +492,7 @@ def Thesaurus(word, search_synonym=True):
     return info
 
 
-def WordReference_Synonym(word, search_synonym=True):
+def WordReference(word, search_synonym=True):
     word = word.strip().lower()
 
     info = Information()
@@ -511,7 +534,7 @@ def WordReference_Synonym(word, search_synonym=True):
     return info
 
 
-def Google_Translate(word, source, target):
+def Google_Translate(source, target, word):
     word = clean_up(word).lower()
     source = clean_up(source).lower()
     target = clean_up(target).lower()
@@ -560,8 +583,10 @@ def Google_Translate(word, source, target):
     return info
 
 
+body = ""
+
 def curses_ui(screen):
-    global message
+    global body
     screen, text_box, body = basic_template(screen)
 
     screen.refresh()
@@ -572,11 +597,96 @@ def curses_ui(screen):
     text_box.edit()
 
 def process_query(query):
-    if query == 'exit':
+    global body 
+    body.clear()
+    body.refresh()
+
+    query = clean_up(query)
+    query = query.lower()
+
+    # Functionalities
+    # 0) Being able to exit program
+    re_exit = re.compile(r'^(?:exit|quit|q)$')
+    # 1) Merriam-Webster
+    re_merriam_webster = re.compile(r'^define (\w+)$')
+    # 2) RAE
+    re_rae = re.compile('^definir (\w+)$')
+    # 3) Thesaurus.com
+    re_thesaurus = re.compile('^(syn|synonym|th|thesaurus|antonym) (\w+)$')
+    re_thesaurus_synonym = re.compile('^(?:syn|synonym|th|thesaurus)')
+    re_thesaurus_antonym = re.compile('^anthonym')
+    # 4) WordReference
+    re_wordreference = re.compile('^(sin|sin[oó]nimo|ant[oó]nimo) (\w+)$')
+    re_wordreference_sinonimo = re.compile('^(?:sin|sin[oó]nimo)$')
+    re_wordreference_antonimo = re.compile('^ant[oó]nimo$')
+    # 5) Google Translate
+    re_translate = re.compile('^(?:trans|translate|trad|traducir) (\w+) (\w+) (\w+)')
+
+
+    info = ""
+    # 0) Exit
+    if re_exit.match(query):
         return 10
+    # 1) Merriam-Webster
+    elif re_merriam_webster.match(query):
+        word = re_merriam_webster.match(query).group(1)
+        print(f'Merriam Webster: {word}')
+        info = Merriam_Webster_Definitions(word)
+    # 2) RAE
+    elif re_rae.match(query):
+        palabra = re_rae.match(query).group(1)
+        print(f'RAE: {palabra}')
+        info = RAE_Definition(palabra)
+    # 3) Thesaurus.com
+    elif re_thesaurus.match(query):
+        match = re_thesaurus.match(query)
+        operation = match.group(1)
+        word = match.group(2)
+        if re_thesaurus_synonym.match(operation):
+            print(f'Thesaurus.com Synonym: {word}')
+            info = Thesaurus(word, True)
+        elif re_thesaurus_antonym.match(operation):
+            print(f'Thesaurus.com Antonym: {word}')
+            info = Thesaurus(word, False)
+        else:
+            print(f'Thesaurus.com IDK: {word}')
+            print(f'WordReference.com NO SÉ QUÉ: {palabra}')
+            return 10
+    # 4) WordReference
+    elif re_wordreference.match(query):
+        hallazgo = re_wordreference.match(query)
+        operacion = hallazgo.group(1)
+        palabra = hallazgo.group(2)
+        if re_wordreference_sinonimo.match(operacion):
+            print(f'WordReference.com Sinónimo: {palabra}')
+            info = WordReference(palabra, True)
+        elif re_wordreference_antonimo.match(operacion):
+            print(f'WordReference.com Antónimo: {palabra}')
+            info = WordReference(palabra, False)
+        else:
+            print(f'WordReference.com NO SÉ QUÉ: {palabra}')
+            return 10
+    # 5) Google Translate
+    elif re_translate.match(query):
+        match = re_translate.match(query)
+        source = match.group(1)
+        target = match.group(2)
+        word = match.group(3)
+        print(f'Translating from {source} to {target}: {word}')
+        info = Google_Translate(source, target, word)
+    # 6) Default help
     else:
-        print(query)
-        return 'clear'
+        print(f'IDK what to do with "{query}"')
+        info = Information()
+        info.set_title('FUTURE HELP')
+        info.set_entries('This area is reserved for a future help screen')
+
+
+    info.set_width(body.max_x)
+    body.set_message(info)
+    body.scroll(0)
+    body.refresh()
+    return 'clear'
 
 
 if __name__ == '__main__':
