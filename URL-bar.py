@@ -4,7 +4,6 @@ import curses.textpad
 import json
 import re
 import requests
-import pprint
 
 import locale
 locale.setlocale(locale.LC_ALL, 'en_US.UTF-8')
@@ -27,7 +26,7 @@ class Information:
     def __init__(self):
         self.title = ''
         self.subtitle = ''
-        self.entries = []
+        self.entries = ''
         self.width = 0
 
     def set_width(self, width):
@@ -57,12 +56,11 @@ class Information:
 # Mostly automates scrolling and makes it easier to insert a message and format
 # it automatically
 class Body:
-    def __init__(self, max_y=10, max_x=10, beg_y=0, beg_x=0, wrapped_line_prefix='... '):
+    def __init__(self, max_y=10, max_x=10, beg_y=0, beg_x=0):
         self.y0 = beg_y
         self.x0 = beg_x
         self.max_y = max_y
         self.max_x = max_x
-        self.wrapped_line_prefix = wrapped_line_prefix
 
         self.message = ''
         self.abs_scroll = 0
@@ -71,20 +69,17 @@ class Body:
         self.win = curses.newwin(self.max_y, self.max_x, self.y0, self.x0)
 
     def set_message(self, info):
-        import textwrap
-        wrapper = textwrap.TextWrapper(
-                width=self.max_x,
-                tabsize=4,
-                replace_whitespace=False,
-                drop_whitespace=False,
-                subsequent_indent=self.wrapped_line_prefix)
+        def wrap(word, width):
+            output = []
+            for line in re.findall(r'(?:.{1,' + str(width) + '}[\s+\$]|\n)', word):
+                output.append(line.rstrip())
+            return '\n'.join(output)
 
-        self.message = info.get_title() + '\n' + wrapper.fill(info.get_subtitle()) + '\n\n' + wrapper.fill(info.get_entries())
-        self.message = self.message.split('\n')
-        for i, line in enumerate(self.message):
-            if line == self.wrapped_line_prefix:
-                self.message[i] = ""
-        #  curses.endwin(); breakpoint()
+        subtitle = wrap(info.get_subtitle(), self.max_x)
+        entries = wrap(info.get_entries(), self.max_x)
+        self.message = info.get_title() + '\n' + subtitle + '\n\n' + entries
+
+        self.message = self.message.splitlines(True)
 
     def refresh(self):
         self.win.refresh()
@@ -108,16 +103,12 @@ class Body:
         # Restrain amount of lines in message based on abs_scroll and max_y
         message = self.message[self.abs_scroll:self.abs_scroll+self.max_y-1]
 
-        #  curses.endwin(); breakpoint()
-
         # Add lines to screen
         for i,line in enumerate(message):
             try:
                 self.win.addstr(i, 0, line)
             except Exception:
                 pass
-                #  curses.endwin(); breakpoint()
-
 
 
 # Text box object for the curses TUI
@@ -284,7 +275,7 @@ def basic_template(screen):
         screen.addstr(y, 1, '│' + ' '*content_width + '▒│')
 
     # Max_y is substracted 5 to take into acount other lines above and below. The same with content_width
-    body = Body(max_y-5, content_width-3, 3, 2)
+    body = Body(max_y-5, content_width-3, 3, 3)
     text_box = TextBox(text_width, 1, 8, process_query)
 
     # Close the bottom part of the box
@@ -357,7 +348,22 @@ def Merriam_Webster_Definitions(word):
             output += f'  ● {definition}\n'
             output += examples
 
-        info.set_entries(output)
+    # No output probably means the word was not found
+    if len(output) == 0 and len(soup.select('p.spelling-suggestions')) > 0:
+        output = ''
+        output += 'The word you\'ve entered isn\'t in the dictionary.'
+        output += 'Please try any of the other spelling suggestions below:\n\n'
+
+        bs4_suggestions = soup.select('p.spelling-suggestions > a')
+        for bs4_suggestion in bs4_suggestions:
+            suggestion = clean_up(bs4_suggestion.get_text())
+            output += f'  ○ {suggestion}\n'
+    elif len(output) == 0:
+        pass
+        #  print('Merriam Webster: IDK what to do')
+
+    info.set_entries(output)
+
     return info
 
 
@@ -390,6 +396,19 @@ def RAE_Definition(word):
         else:
             definition = re.sub(r'^\d+\. ', '', definition)
             output += f'  ● {definition}\n'
+
+    # No output y tener divs de clase item-list implica que no se encontró la palabra en el diccionario
+    if len(output) == 0 and len(soup.select('div.item-list > div')) > 0:
+        output = ''
+        output += f'La palabra {word} no está en el diccionario.'
+        output += 'Intente con cualquiera de las siguientes entradas:\n\n'
+        bs4_suggestions = soup.select('div.item-list > div')
+        for bs4_suggestion in bs4_suggestions:
+            suggestion = clean_up(bs4_suggestion.get_text())
+            output += f'  ○ {suggestion}\n'
+    elif len(output) == 0:
+        pass
+        #  print('RAE: No sé qué hacer')
 
     info.set_entries(output)
 
@@ -453,39 +472,58 @@ def Thesaurus(word, search_synonym=True):
             '''
 
     output = ''
-    for tab in data['searchData']['tunaApiData']['posTabs']:
-        output += f'Definition: {tab["definition"]}\n'
-        output += f'Part of Speech: {tab["pos"]}\n'
+    try:
+        for tab in data['searchData']['tunaApiData']['posTabs']:
+            output += f'Definition: {tab["definition"]}\n'
+            output += f'Part of Speech: {tab["pos"]}\n'
 
-        _nyms = []
-        if search_synonym:
-            for synonym in tab['synonyms']:
-                similarity = int(synonym['similarity'])
-                synonym = clean_up(synonym['term'])
-                _nyms.append([similarity, synonym])
-        else:
-            for antonym in tab['antonyms']:
-                similarity = abs(int(antonym['similarity']))
-                antonym = clean_up(antonym['term'])
-                _nyms.append([similarity, antonym])
+            _nyms = []
+            if search_synonym:
+                for synonym in tab['synonyms']:
+                    similarity = int(synonym['similarity'])
+                    synonym = clean_up(synonym['term'])
+                    _nyms.append([similarity, synonym])
+            else:
+                for antonym in tab['antonyms']:
+                    similarity = abs(int(antonym['similarity']))
+                    antonym = clean_up(antonym['term'])
+                    _nyms.append([similarity, antonym])
 
-        # Sort synonyms or antonyms on decreasing similarity
-        _nyms = sorted(_nyms, key=lambda x: x[0], reverse=True)
+            # Sort synonyms or antonyms on decreasing similarity
+            _nyms = sorted(_nyms, key=lambda x: x[0], reverse=True)
 
-        for _nym in _nyms:
-            similarity = _nym[0]
-            nym = _nym[1]
+            for _nym in _nyms:
+                similarity = _nym[0]
+                nym = _nym[1]
 
-            output += '  '
-            if 75 < similarity <= 100:
-                output += '█'
-            elif 50 < similarity <= 75:
-                output += '▓'
-            elif 25 < similarity <= 50:
-                output += '▒'
-            elif 0 < similarity <= 25:
-                output += '░'
-            output += f' {nym}\n'
+                output += '  '
+                if 75 < similarity <= 100:
+                    output += '█'
+                elif 50 < similarity <= 75:
+                    output += '▓'
+                elif 25 < similarity <= 50:
+                    output += '▒'
+                elif 0 < similarity <= 25:
+                    output += '░'
+                output += f' {nym}\n'
+    except TypeError:
+
+        # Type error implies that dictionary was not found, and that no match was found
+        if len(output) == 0 and len(soup.select('div.spell-suggestions > ul > li')) > 0:
+            output = ''
+            output += 'There were no thesaurus results. Instead try again with these:\n\n'
+
+            bs4_suggestion = soup.select_one('div.spell-suggestions > div > h2 > a')
+            suggestion = clean_up(bs4_suggestion.get_text())
+            output += f'  ○ {suggestion}\n'
+
+            bs4_suggestions = soup.select('div.spell-suggestions > ul > li')
+            for bs4_suggestion in bs4_suggestions:
+                suggestion = clean_up(bs4_suggestion.get_text())
+                output += f'  ○ {suggestion}\n'
+        elif len(output) == 0:
+            pass
+            #  print('Thesaurus.com: IDK what to do')
 
     info.set_entries(output)
 
@@ -527,7 +565,28 @@ def WordReference(word, search_synonym=True):
             _nym = capitalize(_nym)
             output += f'  ● {_nym}\n'
 
+    # No output y tener divs de id spellSug indica que no se obtuvieron resultados 
+    if len(output) == 0 and len(soup.select('div#spellSug')) > 0:
 
+        # Buscar sugerencias directamente al enlace que WordReference lo hace 
+        url = f'https://spell.wordreference.com/spell/spelljs.php?dict=essin&w={word}'
+        response = requests.get(url)
+
+        # Solo extraer el HTML de la respuesta en JavaScript
+        response = re.match(r'document.*HTML = `([\S\s]+)`;', response.text).group(1)
+        response = response.replace('\r\n', '')
+        soup = BeautifulSoup(response, 'html.parser')
+
+        output = ''
+        output += f'No se ha encontrado sinónimos para `{word}`\n'
+        output += 'Quzás quiso decir:\n\n'
+        bs4_suggestions = soup.select('table > tr > td > a')
+        for bs4_suggestion in bs4_suggestions:
+            suggestion = clean_up(bs4_suggestion.get_text())
+            output += f'  ○ {suggestion}\n'
+    elif len(output) == 0:
+        pass
+        #  print('WordReference.com: No sé qué hacer')
 
     info.set_entries(output)
 
@@ -582,7 +641,6 @@ def Google_Translate(source, target, word):
 
     return info
 
-
 body = ""
 
 def curses_ui(screen):
@@ -614,13 +672,15 @@ def process_query(query):
     # 3) Thesaurus.com
     re_thesaurus = re.compile('^(syn|synonym|th|thesaurus|antonym) (\w+)$')
     re_thesaurus_synonym = re.compile('^(?:syn|synonym|th|thesaurus)')
-    re_thesaurus_antonym = re.compile('^anthonym')
+    re_thesaurus_antonym = re.compile('^antonym')
     # 4) WordReference
     re_wordreference = re.compile('^(sin|sin[oó]nimo|ant[oó]nimo) (\w+)$')
     re_wordreference_sinonimo = re.compile('^(?:sin|sin[oó]nimo)$')
     re_wordreference_antonimo = re.compile('^ant[oó]nimo$')
     # 5) Google Translate
     re_translate = re.compile('^(?:trans|translate|trad|traducir) (\w+) (\w+) (\w+)')
+    # 6) Clear body
+    re_clear = re.compile('^(?:clear|cls|c)')
 
 
     info = ""
@@ -630,12 +690,12 @@ def process_query(query):
     # 1) Merriam-Webster
     elif re_merriam_webster.match(query):
         word = re_merriam_webster.match(query).group(1)
-        print(f'Merriam Webster: {word}')
+        #  print(f'Merriam Webster: {word}')
         info = Merriam_Webster_Definitions(word)
     # 2) RAE
     elif re_rae.match(query):
         palabra = re_rae.match(query).group(1)
-        print(f'RAE: {palabra}')
+        #  print(f'RAE: {palabra}')
         info = RAE_Definition(palabra)
     # 3) Thesaurus.com
     elif re_thesaurus.match(query):
@@ -643,14 +703,13 @@ def process_query(query):
         operation = match.group(1)
         word = match.group(2)
         if re_thesaurus_synonym.match(operation):
-            print(f'Thesaurus.com Synonym: {word}')
+            #  print(f'Thesaurus.com Synonym: {word}')
             info = Thesaurus(word, True)
         elif re_thesaurus_antonym.match(operation):
-            print(f'Thesaurus.com Antonym: {word}')
+            #  print(f'Thesaurus.com Antonym: {word}')
             info = Thesaurus(word, False)
         else:
-            print(f'Thesaurus.com IDK: {word}')
-            print(f'WordReference.com NO SÉ QUÉ: {palabra}')
+            #  print(f'Thesaurus.com IDK: {word}')
             return 10
     # 4) WordReference
     elif re_wordreference.match(query):
@@ -658,13 +717,13 @@ def process_query(query):
         operacion = hallazgo.group(1)
         palabra = hallazgo.group(2)
         if re_wordreference_sinonimo.match(operacion):
-            print(f'WordReference.com Sinónimo: {palabra}')
+            #  print(f'WordReference.com Sinónimo: {palabra}')
             info = WordReference(palabra, True)
         elif re_wordreference_antonimo.match(operacion):
-            print(f'WordReference.com Antónimo: {palabra}')
+            #  print(f'WordReference.com Antónimo: {palabra}')
             info = WordReference(palabra, False)
         else:
-            print(f'WordReference.com NO SÉ QUÉ: {palabra}')
+            #  print(f'WordReference.com NO SÉ QUÉ: {palabra}')
             return 10
     # 5) Google Translate
     elif re_translate.match(query):
@@ -672,14 +731,68 @@ def process_query(query):
         source = match.group(1)
         target = match.group(2)
         word = match.group(3)
-        print(f'Translating from {source} to {target}: {word}')
+        #  print(f'Translating from {source} to {target}: {word}')
         info = Google_Translate(source, target, word)
-    # 6) Default help
+    # 6) Clear body
+    elif re_clear.match(query):
+        info = Information()
+    # 7) Default help
     else:
         print(f'IDK what to do with "{query}"')
         info = Information()
-        info.set_title('FUTURE HELP')
-        info.set_entries('This area is reserved for a future help screen')
+        info.set_title('HELP')
+        help_message = """
+Hello! And welcome to URL-bar! 
+
+With this writing tool you will be able to search for definitions, synonyms, antonyms, and translations in both English and Spanish.
+
+I made this writing tool with the special focus of using trustworthy tools I prefer, not default or preset ones. The tools I use to complete these tasks are
+
+  ● English definitions: Merriam Webster Dictionary
+  ● Spanish definitions: Diccionario de la Real Academia Española
+  ● English synonyms and antonyms: Thesaurus.com
+  ● Spanish synonyms and antonyms: WordReference.com
+  ● Translations to any language: Google Translate
+
+
+** To continue reading use the up arrow (↑) and down arrow (↓) to scroll this window
+
+
+Once the program is running you will be prompted to enter a command. These commands are based on keywords and their parameters. Up next is a list of all the commands available:
+
+  ● Exit program: 
+    ○ `quit`
+    ○ `q`
+    ○ `exit`
+  ● English definitions:
+    ○ `define [word]`
+  ● Spanish definitions:
+    ○ `definir [word]`
+  ● English synonyms:
+    ○ `syn [word]`
+    ○ `synonym [word]`
+    ○ `th [word]`
+    ○ `thesaurus [word]`
+  ● English antonyms:
+    ○ `antonym [word]`
+  ● Spanish synonyms:
+    ○ `sin [word]`
+    ○ `sinonimo [word]`
+    ○ `sinónimo [word]`
+  ● Spanish antonyms:
+    ○ `antonimo [word]`
+    ○ `antónimo [word]`
+  ● Translations: 
+    ○ `trans [source language] [target language] [word]`
+    ○ `translate [source language] [target language] [word]`
+    ○ `trad [source language] [target language] [word]`
+    ○ `traducir [source language] [target language] [word]`
+  ● Clear screen:
+    ○ `clear`
+    ○ `cls`
+    ○ `c`
+"""
+        info.set_entries(help_message)
 
 
     info.set_width(body.max_x)
