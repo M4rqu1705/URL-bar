@@ -69,6 +69,9 @@ class Body:
         self.win = curses.newwin(self.max_y, self.max_x, self.y0, self.x0)
 
     def set_message(self, info):
+        # Reset scroll before showing new content 
+        self.abs_scroll = 0
+
         def wrap(word, width):
             output = []
             for line in re.findall(r'(?:.{1,' + str(width) + '}[\s+\$]|\n)', word):
@@ -216,10 +219,13 @@ class TextBox:
         elif char == 191:       # ¡
             self.user_input += '¡'
             return ord('!')
-        else:
+        # Alpha-numeric, spaces and special characters
+        elif re.match(r'[\w\d ~`¡!@#\$%\^&\*\(\)_\+-=\{\}\[\]|\\;:\"\'<>,\.¿?\/]', chr(char)):
             cursor = self.win.win.getyx()[1]
             self.user_input = self.user_input[:cursor] + chr(char) + self.user_input[cursor:]
             return char
+        else:
+            return 0
 
     def edit(self):
         self.win.edit(self.validate)
@@ -565,10 +571,10 @@ def WordReference(word, search_synonym=True):
             _nym = capitalize(_nym)
             output += f'  ● {_nym}\n'
 
-    # No output y tener divs de id spellSug indica que no se obtuvieron resultados 
+    # No output y tener divs de id spellSug indica que no se obtuvieron resultados
     if len(output) == 0 and len(soup.select('div#spellSug')) > 0:
 
-        # Buscar sugerencias directamente al enlace que WordReference lo hace 
+        # Buscar sugerencias directamente al enlace que WordReference lo hace
         url = f'https://spell.wordreference.com/spell/spelljs.php?dict=essin&w={word}'
         response = requests.get(url)
 
@@ -641,7 +647,9 @@ def Google_Translate(source, target, word):
 
     return info
 
+
 body = ""
+
 
 def curses_ui(screen):
     global body
@@ -654,8 +662,9 @@ def curses_ui(screen):
 
     text_box.edit()
 
+
 def process_query(query):
-    global body 
+    global body
     body.clear()
     body.refresh()
 
@@ -666,19 +675,19 @@ def process_query(query):
     # 0) Being able to exit program
     re_exit = re.compile(r'^(?:exit|quit|q)$')
     # 1) Merriam-Webster
-    re_merriam_webster = re.compile(r'^define (\w+)$')
+    re_merriam_webster = re.compile(r'^define (.+)$')
     # 2) RAE
-    re_rae = re.compile('^definir (\w+)$')
+    re_rae = re.compile('^definir (.+)$')
     # 3) Thesaurus.com
-    re_thesaurus = re.compile('^(syn|synonym|th|thesaurus|antonym) (\w+)$')
+    re_thesaurus = re.compile('^(syn|synonym|th|thesaurus|antonym) (.+)$')
     re_thesaurus_synonym = re.compile('^(?:syn|synonym|th|thesaurus)')
     re_thesaurus_antonym = re.compile('^antonym')
     # 4) WordReference
-    re_wordreference = re.compile('^(sin|sin[oó]nimo|ant[oó]nimo) (\w+)$')
+    re_wordreference = re.compile('^(sin|sin[oó]nimo|ant[oó]nimo) (.+)$')
     re_wordreference_sinonimo = re.compile('^(?:sin|sin[oó]nimo)$')
     re_wordreference_antonimo = re.compile('^ant[oó]nimo$')
     # 5) Google Translate
-    re_translate = re.compile('^(?:trans|translate|trad|traducir) (\w+) (\w+) (\w+)')
+    re_translate = re.compile('^(?:trans|translate|trad|traducir) (\w+) (\w+) (.+)')
     # 6) Clear body
     re_clear = re.compile('^(?:clear|cls|c)')
 
@@ -741,57 +750,56 @@ def process_query(query):
         print(f'IDK what to do with "{query}"')
         info = Information()
         info.set_title('HELP')
-        help_message = """
-Hello! And welcome to URL-bar! 
-
-With this writing tool you will be able to search for definitions, synonyms, antonyms, and translations in both English and Spanish.
-
-I made this writing tool with the special focus of using trustworthy tools I prefer, not default or preset ones. The tools I use to complete these tasks are
-
-  ● English definitions: Merriam Webster Dictionary
-  ● Spanish definitions: Diccionario de la Real Academia Española
-  ● English synonyms and antonyms: Thesaurus.com
-  ● Spanish synonyms and antonyms: WordReference.com
-  ● Translations to any language: Google Translate
-
-
-** To continue reading use the up arrow (↑) and down arrow (↓) to scroll this window
-
-
-Once the program is running you will be prompted to enter a command. These commands are based on keywords and their parameters. Up next is a list of all the commands available:
-
-  ● Exit program: 
-    ○ `quit`
-    ○ `q`
-    ○ `exit`
-  ● English definitions:
-    ○ `define [word]`
-  ● Spanish definitions:
-    ○ `definir [word]`
-  ● English synonyms:
-    ○ `syn [word]`
-    ○ `synonym [word]`
-    ○ `th [word]`
-    ○ `thesaurus [word]`
-  ● English antonyms:
-    ○ `antonym [word]`
-  ● Spanish synonyms:
-    ○ `sin [word]`
-    ○ `sinonimo [word]`
-    ○ `sinónimo [word]`
-  ● Spanish antonyms:
-    ○ `antonimo [word]`
-    ○ `antónimo [word]`
-  ● Translations: 
-    ○ `trans [source language] [target language] [word]`
-    ○ `translate [source language] [target language] [word]`
-    ○ `trad [source language] [target language] [word]`
-    ○ `traducir [source language] [target language] [word]`
-  ● Clear screen:
-    ○ `clear`
-    ○ `cls`
-    ○ `c`
-"""
+        help_message = ''
+        help_message += 'Hello! And welcome to URL-bar!\n'
+        help_message += '\n'
+        help_message += 'With this writing tool you will be able to search for definitions, synonyms, antonyms, and translations in both English and Spanish.\n'
+        help_message += '\n'
+        help_message += 'I made this writing tool with the special focus of using trustworthy tools I prefer, not default or preset ones. The tools I use to complete these tasks are:\n'
+        help_message += '\n'
+        help_message += '  ● English definitions: Merriam Webster Dictionary\n'
+        help_message += '  ● Spanish definitions: Diccionario de la Real Academia Española\n'
+        help_message += '  ● English synonyms and antonyms: Thesaurus.com\n'
+        help_message += '  ● Spanish synonyms and antonyms: WordReference.com\n'
+        help_message += '  ● Translations to any language: Google Translate\n'
+        help_message += '\n'
+        help_message += '\n'
+        help_message += '** To continue reading use the up arrow (↑) and down arrow (↓) to scroll this window\n'
+        help_message += '\n'
+        help_message += '\n'
+        help_message += 'Once the program is running you will be prompted to enter a command. These commands are based on keywords and their parameters. Up next is a list of all the commands available:\n'
+        help_message += '\n'
+        help_message += '  ● Exit program:\n'
+        help_message += '    ○ `quit`\n'
+        help_message += '    ○ `q`\n'
+        help_message += '    ○ `exit`\n'
+        help_message += '  ● English definitions:\n'
+        help_message += '    ○ `define [word]`\n'
+        help_message += '  ● Spanish definitions:\n'
+        help_message += '    ○ `definir [word]`\n'
+        help_message += '  ● English synonyms:\n'
+        help_message += '    ○ `syn [word]`\n'
+        help_message += '    ○ `synonym [word]`\n'
+        help_message += '    ○ `th [word]`\n'
+        help_message += '    ○ `thesaurus [word]`\n'
+        help_message += '  ● English antonyms:\n'
+        help_message += '    ○ `antonym [word]`\n'
+        help_message += '  ● Spanish synonyms:\n'
+        help_message += '    ○ `sin [word]`\n'
+        help_message += '    ○ `sinonimo [word]`\n'
+        help_message += '    ○ `sinónimo [word]`\n'
+        help_message += '  ● Spanish antonyms:\n'
+        help_message += '    ○ `antonimo [word]`\n'
+        help_message += '    ○ `antónimo [word]`\n'
+        help_message += '  ● Translations:\n'
+        help_message += '    ○ `trans [source language] [target language] [word]`\n'
+        help_message += '    ○ `translate [source language] [target language] [word]`\n'
+        help_message += '    ○ `trad [source language] [target language] [word]`\n'
+        help_message += '    ○ `traducir [source language] [target language] [word]`\n'
+        help_message += '  ● Clear screen:\n'
+        help_message += '    ○ `clear`\n'
+        help_message += '    ○ `cls`\n'
+        help_message += '    ○ `c`\n'
         info.set_entries(help_message)
 
 
