@@ -1,5 +1,0 @@
-venv activate URL-bar && ^
-activate && ^
-python -OO -m PyInstaller URL-bar.py && ^
-pause && ^
-

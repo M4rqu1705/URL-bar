@@ -129,6 +129,7 @@ class TextBox:
 
     def validate(self, char):
         global body
+        #  curses.endwin(); breakpoint()
         # Make sure that accents are taken into account
         if char == 259:         # Up arrow
             body.scroll(-1)
@@ -154,6 +155,12 @@ class TextBox:
         elif char == 358:        # End key
             self.win.win.move(0,len(self.user_input))
             return char
+        elif char == 339:       # Page Up
+            body.scroll(-10)
+            body.refresh()
+        elif char == 338:       # Page down
+            body.scroll(10)
+            body.refresh()
         elif char == 10:        # Enter
             response = self.process_query(self.gather())
             if isinstance(response, str):
@@ -220,7 +227,7 @@ class TextBox:
             self.user_input += '¡'
             return ord('!')
         # Alpha-numeric, spaces and special characters
-        elif re.match(r'[\w\d ~`¡!@#\$%\^&\*\(\)_\+-=\{\}\[\]|\\;:\"\'<>,\.¿?\/]', chr(char)):
+        elif re.match(r'[\w\d ~`!@#\$%\^&\*\(\)_\+-=\{\}\[\]|\\;:\"\'<>,\.?\/]', chr(char)):
             cursor = self.win.win.getyx()[1]
             self.user_input = self.user_input[:cursor] + chr(char) + self.user_input[cursor:]
             return char
@@ -604,11 +611,11 @@ def Google_Translate(source, target, word):
     source = clean_up(source).lower()
     target = clean_up(target).lower()
 
-    url = f'https://translate.google.com/translate_a/single?client=gtx&sl={source}&tl={target}&dj=1&dt=bd&q={word}'
+    url = f'https://translate.google.com/translate_a/single?client=gtx&sl={source}&tl={target}&dj=1&dt=t&dt=bd&q={word}'
     response = requests.get(url)
 
     # Dictionary to convert abbreviation to actual language
-    # Taken from 'https://ctrlq.org/code/19899-google-translate-languages'
+    # Scraped from 'https://ctrlq.org/code/19899-google-translate-languages'
     LANGUAGES = {'af': 'Afrikaans', 'ga': 'Irish', 'sq': 'Albanian', 'it': 'Italian', 'ar': 'Arabic', 'ja': 'Japanese', 'az': 'Azerbaijani', 'kn': 'Kannada', 'eu': 'Basque', 'ko': 'Korean', 'bn': 'Bengali', 'la': 'Latin', 'be': 'Belarusian', 'lv': 'Latvian', 'bg': 'Bulgarian', 'lt': 'Lithuanian', 'ca': 'Catalan', 'mk': 'Macedonian', 'zh-CN': 'Chinese Simplified', 'ms': 'Malay', 'zh-TW': 'Chinese Traditional', 'mt': 'Maltese', 'hr': 'Croatian', 'no': 'Norwegian', 'cs': 'Czech', 'fa': 'Persian', 'da': 'Danish', 'pl': 'Polish', 'nl': 'Dutch', 'pt': 'Portuguese', 'en': 'English', 'ro': 'Romanian', 'eo': 'Esperanto', 'ru': 'Russian', 'et': 'Estonian', 'sr': 'Serbian', 'tl': 'Filipino', 'sk': 'Slovak', 'fi': 'Finnish', 'sl': 'Slovenian', 'fr': 'French', 'es': 'Spanish', 'gl': 'Galician', 'sw': 'Swahili', 'ka': 'Georgian', 'sv': 'Swedish', 'de': 'German', 'ta': 'Tamil', 'el': 'Greek', 'te': 'Telugu', 'gu': 'Gujarati', 'th': 'Thai', 'ht': 'Haitian Creole', 'tr': 'Turkish', 'iw': 'Hebrew', 'uk': 'Ukrainian', 'hi': 'Hindi', 'ur': 'Urdu', 'hu': 'Hungarian', 'vi': 'Vietnamese', 'is': 'Icelandic', 'cy': 'Welsh', 'id': 'Indonesian', 'yi': 'Yiddish'}
 
     data = json.loads(response.text)
@@ -617,31 +624,44 @@ def Google_Translate(source, target, word):
     info.set_title(word)
     info.set_subtitle(LANGUAGES[data['src']] + ' to ' + LANGUAGES[target])
 
-    data = data['dict'][0]
-
     output = ''
-    max_score = max([e['score'] for e in data['entry']])
+    # Try and print verified translations
+    translations = data['sentences']
+    output += 'Preferred translation'
+    output += 's\n' if len(translations) > 1 else '\n'
+    for translation in translations:
+        translation = clean_up(translation['trans'])
+        output += f'  ● {translation}\n'
 
-    if len(output) != 0:
-        output += '\n'
+    try:
+        data = data['dict'][0]
 
-    output += f'Part of Speech: {data["pos"]}\n'
+        max_score = max([e['score'] for e in data['entry']])
 
-    for entry in data['entry']:
-        performance = (entry['score'] / max_score)*100
-        output += '  '
-        if 75 < performance <= 100:
-            output += '█'
-        elif 50 < performance <= 75:
-            output += '▓'
-        elif 25 < performance <= 50:
-            output += '▒'
-        elif 0 < performance <= 25:
-            output += '░'
+        if len(output) != 0:
+            output += '\n'
 
-        output += f' {entry["word"]} - '
-        output += ', '.join(entry['reverse_translation'])
-        output += '\n'
+        output += f'Part of Speech: {data["pos"]}\n'
+
+        for entry in data['entry']:
+            performance = (entry['score'] / max_score)*100
+            output += '  '
+            if 75 < performance <= 100:
+                output += '█'
+            elif 50 < performance <= 75:
+                output += '▓'
+            elif 25 < performance <= 50:
+                output += '▒'
+            elif 0 < performance <= 25:
+                output += '░'
+
+            output += f' {entry["word"]} - '
+            output += ', '.join(entry['reverse_translation'])
+            output += '\n'
+    except Exception:
+        # No 'dict' entry means no synonyms, antonyms, etc. and that the only
+        # answer could have been verified by the Translate community
+        pass
 
     info.set_entries(output)
 
@@ -675,17 +695,17 @@ def process_query(query):
     # 0) Being able to exit program
     re_exit = re.compile(r'^(?:exit|quit|q)$')
     # 1) Merriam-Webster
-    re_merriam_webster = re.compile(r'^define (.+)$')
+    re_merriam_webster = re.compile(r'^(?:define|def en) (.+)$')
     # 2) RAE
-    re_rae = re.compile('^definir (.+)$')
+    re_rae = re.compile('^(?:definir|def es) (.+)$')
     # 3) Thesaurus.com
-    re_thesaurus = re.compile('^(syn|synonym|th|thesaurus|antonym) (.+)$')
+    re_thesaurus = re.compile('^(syn|synonym|th|thesaurus|antonym|ant en) (.+)$')
     re_thesaurus_synonym = re.compile('^(?:syn|synonym|th|thesaurus)')
-    re_thesaurus_antonym = re.compile('^antonym')
+    re_thesaurus_antonym = re.compile('^(?:antonym|ant en)')
     # 4) WordReference
-    re_wordreference = re.compile('^(sin|sin[oó]nimo|ant[oó]nimo) (.+)$')
+    re_wordreference = re.compile('^(sin|sin[oó]nimo|ant[oó]nimo|ant es) (.+)$')
     re_wordreference_sinonimo = re.compile('^(?:sin|sin[oó]nimo)$')
-    re_wordreference_antonimo = re.compile('^ant[oó]nimo$')
+    re_wordreference_antonimo = re.compile('^(?:ant[oó]nimo|ant es)$')
     # 5) Google Translate
     re_translate = re.compile('^(?:trans|translate|trad|traducir) (\w+) (\w+) (.+)')
     # 6) Clear body
@@ -765,6 +785,7 @@ def process_query(query):
         help_message += '\n'
         help_message += '\n'
         help_message += '** To continue reading use the up arrow (↑) and down arrow (↓) to scroll this window\n'
+        help_message += '** You can also use the Page Up and Page Down keys to scroll faster\n'
         help_message += '\n'
         help_message += '\n'
         help_message += 'Once the program is running you will be prompted to enter a command. These commands are based on keywords and their parameters. Up next is a list of all the commands available:\n'
@@ -775,8 +796,10 @@ def process_query(query):
         help_message += '    ○ `exit`\n'
         help_message += '  ● English definitions:\n'
         help_message += '    ○ `define [word]`\n'
+        help_message += '    ○ `def en [word]`\n'
         help_message += '  ● Spanish definitions:\n'
         help_message += '    ○ `definir [word]`\n'
+        help_message += '    ○ `def es [word]`\n'
         help_message += '  ● English synonyms:\n'
         help_message += '    ○ `syn [word]`\n'
         help_message += '    ○ `synonym [word]`\n'
@@ -784,6 +807,7 @@ def process_query(query):
         help_message += '    ○ `thesaurus [word]`\n'
         help_message += '  ● English antonyms:\n'
         help_message += '    ○ `antonym [word]`\n'
+        help_message += '    ○ `ant en [word]`\n'
         help_message += '  ● Spanish synonyms:\n'
         help_message += '    ○ `sin [word]`\n'
         help_message += '    ○ `sinonimo [word]`\n'
@@ -791,6 +815,7 @@ def process_query(query):
         help_message += '  ● Spanish antonyms:\n'
         help_message += '    ○ `antonimo [word]`\n'
         help_message += '    ○ `antónimo [word]`\n'
+        help_message += '    ○ `ant es [word]`\n'
         help_message += '  ● Translations:\n'
         help_message += '    ○ `trans [source language] [target language] [word]`\n'
         help_message += '    ○ `translate [source language] [target language] [word]`\n'
@@ -800,6 +825,22 @@ def process_query(query):
         help_message += '    ○ `clear`\n'
         help_message += '    ○ `cls`\n'
         help_message += '    ○ `c`\n'
+        help_message += '\n'
+        help_message += '* The Google Translate tool requires that you use language abbreviations instead of the actual name of the language. The abbreviations you should be using are:\n'
+        
+        LANGUAGES = {'af': 'Afrikaans', 'ga': 'Irish', 'sq': 'Albanian', 'it': 'Italian', 'ar': 'Arabic', 'ja': 'Japanese', 'az': 'Azerbaijani', 'kn': 'Kannada', 'eu': 'Basque', 'ko': 'Korean', 'bn': 'Bengali', 'la': 'Latin', 'be': 'Belarusian', 'lv': 'Latvian', 'bg': 'Bulgarian', 'lt': 'Lithuanian', 'ca': 'Catalan', 'mk': 'Macedonian', 'zh-CN': 'Chinese Simplified', 'ms': 'Malay', 'zh-TW': 'Chinese Traditional', 'mt': 'Maltese', 'hr': 'Croatian', 'no': 'Norwegian', 'cs': 'Czech', 'fa': 'Persian', 'da': 'Danish', 'pl': 'Polish', 'nl': 'Dutch', 'pt': 'Portuguese', 'en': 'English', 'ro': 'Romanian', 'eo': 'Esperanto', 'ru': 'Russian', 'et': 'Estonian', 'sr': 'Serbian', 'tl': 'Filipino', 'sk': 'Slovak', 'fi': 'Finnish', 'sl': 'Slovenian', 'fr': 'French', 'es': 'Spanish', 'gl': 'Galician', 'sw': 'Swahili', 'ka': 'Georgian', 'sv': 'Swedish', 'de': 'German', 'ta': 'Tamil', 'el': 'Greek', 'te': 'Telugu', 'gu': 'Gujarati', 'th': 'Thai', 'ht': 'Haitian Creole', 'tr': 'Turkish', 'iw': 'Hebrew', 'uk': 'Ukrainian', 'hi': 'Hindi', 'ur': 'Urdu', 'hu': 'Hungarian', 'vi': 'Vietnamese', 'is': 'Icelandic', 'cy': 'Welsh', 'id': 'Indonesian', 'yi': 'Yiddish'}
+
+        languages = []
+
+        for key in LANGUAGES:
+            languages.append([key, LANGUAGES[key]])
+
+        languages = sorted(languages, key=lambda x: x[0])
+
+        for language in languages:
+            help_message += f'  ● {language[0]} - {language[1]}\n'
+
+
         info.set_entries(help_message)
 
 
